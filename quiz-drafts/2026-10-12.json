@@ -1,0 +1,86 @@
+{
+  "title": "Oil at $100, a Fed hike & Nvidia's $6T chase",
+  "weekOf": "2026-10-12",
+  "questions": [
+    {
+      "category": "Central Banks",
+      "text": "The Fed released minutes this week from its September 15–16 meeting. What did the FOMC decide at that meeting?",
+      "options": ["Cut 25bp to 3.25–3.50%", "Held at 3.50–3.75%", "Raised 25bp to 3.75–4.00%", "Raised 50bp to 4.00–4.25%"],
+      "correct": 2,
+      "explanation": "In a unanimous vote the Fed raised rates to 3.75–4.00%, its first hike since 2023, citing above-target inflation and Middle East tensions.",
+      "source": "https://www.cnbc.com/2026/09/16/fed-rate-decision-september-2026.html"
+    },
+    {
+      "category": "Energy",
+      "text": "With the war involving Iran still disrupting supply, where did Brent crude trade for most of this week?",
+      "options": ["Above $130 a barrel", "Just above $100 a barrel", "Around $80 a barrel", "Around $65 a barrel"],
+      "correct": 1,
+      "explanation": "Brent spent the week around $102–108 and ended Friday near $102, more than 60% higher than a year ago.",
+      "source": "https://energynow.com/2026/10/oil-ends-volatile-week-mixed-as-emergency-reserve-release-knocks-wti-lower-but-brent-holds-above-102/"
+    },
+    {
+      "category": "US Economy",
+      "text": "How many jobs did the US economy add in September, according to the latest payrolls report?",
+      "options": ["29,000", "84,000", "133,000", "210,000"],
+      "correct": 0,
+      "explanation": "Payrolls rose just 29,000 against an 84,000 forecast, and unemployment ticked up to 4.2% (133,000 was August's revised figure).",
+      "source": "https://www.cnbc.com/2026/10/02/jobs-report-september-2026.html"
+    },
+    {
+      "category": "M&A",
+      "text": "France's Schneider Electric agreed this week to its biggest-ever acquisition, a roughly $22.6bn all-cash deal for which US industrial software maker?",
+      "options": ["Autodesk", "Ansys", "Aspen Technology", "PTC"],
+      "correct": 3,
+      "explanation": "Schneider is paying $205 per share for PTC, a 42% premium; Schneider's shares fell about 7–8% on the news while PTC jumped around 35%.",
+      "source": "https://www.ptc.com/en/news/2026/schneider-electric-to-acquire-ptc"
+    },
+    {
+      "category": "Big Tech",
+      "text": "Nvidia hit fresh record highs this week. It is closing in on becoming the first company ever worth how much?",
+      "options": ["$4 trillion", "$5 trillion", "$6 trillion", "$8 trillion"],
+      "correct": 2,
+      "explanation": "Nvidia's value topped $5.8 trillion on Oct 6 after it expanded its buyback by $150 billion; it was already the first to reach $5 trillion, in October 2025.",
+      "source": "https://www.bloomberg.com/news/articles/2026-10-06/nvidia-heads-for-6-trillion-value-with-chipmaker-back-at-record"
+    },
+    {
+      "category": "Crypto",
+      "text": "Bitcoin slid about 4% toward $80,000 on Thursday. Traders were nervous ahead of the one-year anniversary of which event?",
+      "options": ["The collapse of FTX", "The October 2025 crypto flash crash", "The approval of US spot bitcoin ETFs", "The Mt. Gox exchange hack"],
+      "correct": 1,
+      "explanation": "The drop came days before the anniversary of the October 10, 2025 flash crash, with rising oil prices and rate-hike fears adding pressure.",
+      "source": "https://www.coindesk.com/markets/2026/10/08/crypto-crumbles-as-anniversary-of-flash-crash-nears"
+    },
+    {
+      "category": "Hong Kong",
+      "text": "Kuaishou has reportedly hired banks for a Hong Kong IPO of at least $1bn for which of its businesses?",
+      "options": ["Ernie Bot", "Doubao", "Kling AI", "Qwen"],
+      "correct": 2,
+      "explanation": "Kling is Kuaishou's AI video-generation business; Ernie (Baidu), Doubao (ByteDance) and Qwen (Alibaba) belong to rivals.",
+      "source": "https://technode.com/2026/10/08/kuaishous-kling-ai-reportedly-picks-banks-for-hong-kong-ipo-targeting-at-least-1-billion/"
+    },
+    {
+      "category": "Earnings",
+      "text": "Memory-chip maker Micron, whose blowout results helped lift chip stocks, reported record fiscal-2026 revenue of roughly how much?",
+      "options": ["$37 billion", "$68 billion", "$95 billion", "$133 billion"],
+      "correct": 3,
+      "explanation": "Micron's fiscal-2026 revenue reached $133.2 billion, up from $37.4 billion a year earlier, on surging AI demand for memory.",
+      "source": "https://www.sec.gov/Archives/edgar/data/0000723125/000072312526000018/a2026q4ex991-pressrelease.htm"
+    },
+    {
+      "category": "India",
+      "text": "Jio Platforms reportedly set a price band for what could be India's largest-ever IPO. Which listing would it overtake for that title?",
+      "options": ["LIC", "Hyundai Motor India", "Paytm", "Swiggy"],
+      "correct": 1,
+      "explanation": "At about ₹30,000 crore, Jio's IPO (subscription from Oct 21) would surpass Hyundai Motor India's roughly ₹27,870 crore listing in 2024.",
+      "source": "https://www.businesstoday.in/markets/ipo-corner/story/jio-platform-ipo-price-to-be-set-at-rs-1065-1119-says-report-check-details-560687-2026-10-09"
+    },
+    {
+      "category": "Policy",
+      "text": "After emergency drawdowns, the US Strategic Petroleum Reserve fell to about 283 million barrels this week, its lowest level since…?",
+      "options": ["1982", "1995", "2008", "2020"],
+      "correct": 0,
+      "explanation": "The SPR hit its lowest level since 1982 as the Energy Department sought bids for the final 40 million barrels of a 172-million-barrel release.",
+      "source": "https://www.rigzone.com/news/usa_continues_strategic_petroleum_reserve_release-05-oct-2026-184770-article/"
+    }
+  ]
+}

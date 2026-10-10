@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "admins": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+        ".validate": "newData.isBoolean()"
+      }
+    },
+    "quizzes": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "hostdata": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "games": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$pin": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+        "players": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && (root.child('games').child($pin).child('meta/state').val() === 'lobby' || root.child('games').child($pin).child('meta/state').val() === 'allocate')",
+            ".validate": "newData.hasChild('name')",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "locked": { ".validate": "newData.isBoolean()" },
+            "allocation": {
+              "$i": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" }
+            },
+            "$other": { ".validate": false }
+          }
+        },
+        "answers": {
+          "$q": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && root.child('games').child($pin).child('meta/state').val() === 'question' && root.child('games').child($pin).child('meta/qKey').val() === $q",
+              ".validate": "newData.hasChildren(['choice', 'lev'])",
+              "choice": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+              "lev": { ".validate": "newData.isNumber() && (newData.val() === 0.5 || newData.val() === 1 || newData.val() === 2 || newData.val() === 3)" },
+              "at": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
+            }
+          }
+        }
+      }
+    }
+  }
+}
