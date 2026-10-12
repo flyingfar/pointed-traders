@@ -2,13 +2,16 @@
 // a localStorage-backed mock (syncs between tabs) in demo mode.
 //
 // API: init(), get(path), set(path, v), update({ 'a/b': v, ... }), remove(path),
-//      on(path, cb) -> unsubscribe, now(), signInAnon(), signInEmail(e, p),
+//      on(path, cb) -> unsubscribe, now(), ts() (server timestamp), signInAnon(), signInEmail(e, p),
 //      signOut(), authReady(), isAdmin(uid)
 
 import { CONFIG } from './config.js';
 
 const FB_VERSION = '10.12.2';
-const forceDemo = new URLSearchParams(location.search).has('demo');
+// ?demo forces local demo mode (for testing without touching the live database); it sticks for the tab.
+const forceDemo = new URLSearchParams(location.search).has('demo')
+  ? (sessionStorage.setItem('pointed.demo', '1'), true)
+  : sessionStorage.getItem('pointed.demo') === '1';
 
 function split(path) {
   return String(path).split('/').filter(Boolean);
@@ -85,6 +88,7 @@ function createDemo() {
       return () => listeners.delete(l);
     },
     now: () => Date.now(),
+    ts: () => Date.now(),
     async authReady() { return { uid, isAnonymous: false, email: 'demo@local' }; },
     async signInAnon() { return uid; },
     async signInEmail() { return { uid }; },
@@ -124,6 +128,8 @@ async function createFirebase(cfg) {
       return dbM.onValue(dbM.ref(d, path), (s) => cb(s.val()), (err) => console.error('[db]', path, err));
     },
     now: () => Date.now() + offset,
+    // Server-side timestamp sentinel — the database fills in its own clock (used for answer timing).
+    ts: () => dbM.serverTimestamp(),
     authReady,
     async signInAnon() {
       const u = await authReady();

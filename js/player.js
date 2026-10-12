@@ -1,7 +1,11 @@
+// Phone (player) app — mode-independent flow: join → lobby → [mode pre-game phase] →
+// question → reveal → standings → final. Mode-specific pieces come from js/modes/*.js.
+
 import { db } from './db.js';
 import { CONFIG } from './config.js';
 import { $, $$, esc, fmt, signed, at, toArr, ordinal, LETTERS, brandHTML, demoBanner, fmtWeek } from './util.js';
-import { LEVERS, PICKABLE, payoff, levShort, remainingLevers, rankList, allocFor, allocProblems, evenSplit, withDefaults } from './game.js';
+import { rankList } from './game.js';
+import { getMode } from './modes/index.js';
 
 const app = $('#app');
 const foot = $('#foot');
@@ -11,8 +15,10 @@ const S = {
   uid: null, pin: null,
   meta: null, cats: [], me: null, myAnswer: null, scores: null, players: null,
   key: null, subs: [], ansSub: null, ansQ: null,
-  sel: { choice: null, lev: 1 }, draft: null,
+  choice: null, submitting: false,
 };
+const ctx = { S, db, app, setFoot };
+const mode = () => getMode(S.meta?.mode);
 
 init();
 
@@ -69,7 +75,7 @@ function renderJoin(pin = '', error = '') {
       <div class="err" id="err">${esc(error)}</div>
       <button class="btn block big" id="joinBtn">Join game</button>
     </form>
-    <p class="muted center" style="font-size:14px;margin-top:22px">Split 100 points across 10 categories. Win or lose your stake on every answer — 0.5×, 2× and 3× levers once each.<br/>Speed doesn't matter — conviction does.</p>`;
+    <p class="muted center" style="font-size:14px;margin-top:22px">Enter the PIN on the big screen. You'll answer on your phone — results show up on the screen and here.</p>`;
   $('#joinForm').onsubmit = async (e) => {
     e.preventDefault();
     const pin = $('#pin').value.trim();
@@ -146,19 +152,21 @@ function render() {
     app.innerHTML = `<div class="hero"><div class="kicker">Question ${m.qIndex + 1}</div><h1>${S.myAnswer ? 'Locked in' : "Time's up"}</h1><p class="muted">Scoring the round…</p></div>`;
     return;
   }
-  let key = m.state + ':' + (m.qIndex ?? '');
-  if (m.state === 'allocate') key += S.me.locked ? ':L' : ':E';
-  if (m.state === 'question') key += S.myAnswer ? ':A' : ':Q';
+  const M = mode();
+  const state = m.state === 'allocate' && !M.hasAllocate ? 'lobby' : m.state;
+  let key = state + ':' + (m.qIndex ?? '');
+  if (state === 'allocate') key += S.me.locked ? ':L' : ':E';
+  if (state === 'question') key += S.myAnswer ? ':A' : ':Q';
   const fresh = key !== S.key;
   S.key = key;
-  const views = { lobby: vLobby, allocate: vAllocate, question: vQuestion, reveal: vReveal, board: vBoard, final: vFinal };
+  const views = { lobby: vLobby, allocate: () => M.player.allocate(ctx), question: vQuestion, reveal: vReveal, board: vBoard, final: vFinal };
   // Views without inputs can safely re-render on every update; input views only mount once.
-  if (fresh || ['lobby', 'reveal', 'board', 'final'].includes(m.state) || (m.state === 'question' && S.myAnswer)) {
-    (views[m.state] || vLobby)(fresh);
-  } else if (m.state === 'allocate' && !S.me.locked) {
-    updateAllocTotals();
-  } else if (m.state === 'question') {
-    updateLevButtons();
+  if (fresh || ['lobby', 'reveal', 'board', 'final'].includes(state) || (state === 'question' && S.myAnswer)) {
+    (views[state] || vLobby)(fresh);
+  } else if (state === 'allocate' && !S.me.locked) {
+    M.player.allocateUpdate?.(ctx);
+  } else if (state === 'question') {
+    refreshQuestion();
   }
 }
 
@@ -166,6 +174,7 @@ function render() {
 function vLobby() {
   setFoot('');
   const n = Object.keys(S.players || {}).length;
+  const M = mode();
   app.innerHTML = `
     <div class="hero">
       <div class="result-badge ok" style="font-size:40px">✓</div>
@@ -174,225 +183,88 @@ function vLobby() {
       <p>See your name on the screen? Sit tight — ${n} player${n === 1 ? '' : 's'} joined.</p>
     </div>
     <div class="card stack">
-      <div class="kicker">How it works</div>
-      <div><b>1 · Allocate.</b> Split ${withDefaults(S.meta.settings).budget} points across the ${S.cats.length} categories (${withDefaults(S.meta.settings).minPer}–${withDefaults(S.meta.settings).maxPer} each) before you see any question. If you don't change anything you play with an even split.</div>
-      <div><b>2 · Lever up or hedge.</b> Right answers win your stake, wrong answers lose it. After reading a question you can play a <b>0.5× hedge</b>, <b>2×</b> or <b>3×</b> lever — gains and losses scale the same way. Each lever works <b>once per game</b>.</div>
-      <div><b>3 · Answer.</b> No speed bonus — only accuracy and conviction count.</div>
+      <div class="row"><span class="kicker">How it works</span><span class="spacer"></span><span class="chip ${M.chip}">${esc(M.name)}</span></div>
+      ${M.rules(S.meta.settings, S.cats.length).map(([t, d]) => `<div><b>${esc(t)}.</b> ${esc(d)}</div>`).join('')}
     </div>`;
-}
-
-function allocSettings() {
-  return withDefaults(S.meta.settings);
-}
-
-function allocState() {
-  const n = S.cats.length;
-  if (!S.draft || S.draft.length !== n) {
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(`pointed.draft.${S.pin}`)); } catch {}
-    const saved = S.me.allocation ? toArr(S.me.allocation).map((v) => Math.floor(Number(v) || 0)) : null;
-    S.draft = saved && saved.length === n ? saved
-      : Array.isArray(d) && d.length === n ? d
-      : evenSplit(n, allocSettings().budget);
-  }
-  return S.draft;
-}
-
-function vAllocate() {
-  const st = allocSettings();
-  const draft = allocState();
-
-  if (S.me.locked) {
-    const alloc = allocFor(S.me.allocation, S.cats.length, st);
-    app.innerHTML = `
-      <div class="center" style="margin:18px 0"><div class="kicker">Portfolio locked</div><h1>Waiting for Q1</h1>
-      <p class="muted">You can still tweak until the host starts.</p></div>
-      <div class="card">${S.cats.map((c, i) => `
-        <div class="alloc-row"><span class="num">${i + 1}</span><span class="cat">${esc(c)}</span><b>${alloc[i]}</b></div>`).join('')}
-      </div>`;
-    setFoot(`<button class="btn ghost block" id="edit">Edit allocation</button>`);
-    $('#edit').onclick = () => db.set(`games/${S.pin}/players/${S.uid}/locked`, false);
-    return;
-  }
-
-  app.innerHTML = `
-    <div style="margin:10px 0 14px"><div class="kicker">Step 1 of 2 · Allocate</div>
-      <h2>Split ${st.budget} points across the categories</h2>
-      <p class="muted" style="margin:4px 0 0">Each category needs <b style="color:var(--ink)">${st.minPer}–${st.maxPer} points</b>. You start evenly spread — move points to where you're confident. You'll see each question only after you commit.</p></div>
-    <div class="card" style="padding:6px 16px">${S.cats.map((c, i) => `
-      <div class="alloc-row">
-        <span class="num">${i + 1}</span><span class="cat">${esc(c)}</span>
-        <div class="stepper">
-          <button type="button" data-i="${i}" data-d="-1" aria-label="less">−</button>
-          <input class="input" data-i="${i}" inputmode="numeric" value="${draft[i]}" />
-          <button type="button" data-i="${i}" data-d="1" aria-label="more">+</button>
-        </div>
-      </div>`).join('')}
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="btn ghost small" id="even">Reset to even split</button>
-    </div>`;
-  setFoot(`
-    <div class="row"><b id="remain"></b><span class="spacer"></span><span class="muted" id="used"></span></div>
-    <div class="budget-bar" id="bbar"><div></div></div>
-    <button class="btn block big" id="lock" style="margin-top:10px">Lock in portfolio</button>`);
-
-  const clamp = (v) => Math.min(st.maxPer, Math.max(st.minPer, v));
-  const commit = () => {
-    localStorage.setItem(`pointed.draft.${S.pin}`, JSON.stringify(S.draft));
-    updateAllocTotals();
-  };
-  $$('.stepper button').forEach((b) => (b.onclick = () => {
-    const i = +b.dataset.i;
-    const used = S.draft.reduce((a, v) => a + v, 0);
-    let v = S.draft[i] + +b.dataset.d * st.step;
-    if (+b.dataset.d > 0) v = Math.min(v, S.draft[i] + Math.max(0, st.budget - used));
-    S.draft[i] = clamp(v);
-    $(`.stepper input[data-i="${i}"]`).value = S.draft[i];
-    commit();
-  }));
-  $$('.stepper input').forEach((inp) => {
-    inp.oninput = () => {
-      S.draft[+inp.dataset.i] = Math.floor(Number(inp.value.replace(/\D/g, '')) || 0);
-      commit();
-    };
-    inp.onfocus = () => inp.select();
-    inp.onblur = () => {
-      S.draft[+inp.dataset.i] = clamp(S.draft[+inp.dataset.i]);
-      inp.value = S.draft[+inp.dataset.i];
-      commit();
-    };
-  });
-  $('#even').onclick = () => {
-    S.draft = evenSplit(S.draft.length, st.budget);
-    $$('.stepper input').forEach((inp) => (inp.value = S.draft[+inp.dataset.i]));
-    commit();
-  };
-  $('#lock').onclick = async () => {
-    $('#lock').disabled = true;
-    try {
-      await db.update({
-        [`games/${S.pin}/players/${S.uid}/allocation`]: S.draft,
-        [`games/${S.pin}/players/${S.uid}/locked`]: true,
-      });
-    } catch (e) {
-      alert('Could not lock in — the round may have started.');
-      $('#lock').disabled = false;
-    }
-  };
-  updateAllocTotals();
-}
-
-function updateAllocTotals() {
-  if (!$('#remain')) return;
-  const st = allocSettings();
-  const used = S.draft.reduce((a, v) => a + v, 0);
-  const problems = allocProblems(S.draft, st);
-  const rem = st.budget - used;
-  $('#remain').innerHTML = !problems.length ? '<span class="up">All points allocated ✓</span>'
-    : rem > 0 && problems.length === 1 ? problems[0] : `<span class="down">${problems.join(' · ')}</span>`;
-  $('#used').textContent = `${used} / ${st.budget}`;
-  $('#bbar').classList.toggle('over', rem < 0);
-  $('#bbar > div').style.width = Math.min(100, (used / st.budget) * 100) + '%';
-  $$('.stepper input').forEach((inp) => {
-    const v = S.draft[+inp.dataset.i];
-    inp.style.borderColor = v < st.minPer || v > st.maxPer ? 'var(--down)' : '';
-  });
-  $('#lock').disabled = problems.length > 0;
-}
-
-function myStake(q) {
-  return allocFor(S.me.allocation, S.cats.length, S.meta.settings)[q] || 0;
 }
 
 function vQuestion(fresh) {
+  const M = mode();
   const m = S.meta, q = m.qIndex, Q = m.question || {};
-  const stake = myStake(q);
   const opts = toArr(Q.options);
+  const head = `${q + 1} of ${m.n}${Q.category && M.usesCategories ? ' · ' + esc(Q.category) : ''}`;
 
   if (S.myAnswer) {
     const a = S.myAnswer;
     setFoot('');
     app.innerHTML = `
       <div class="center" style="margin-top:30px">
-        <div class="kicker">Question ${q + 1} of ${m.n} · ${esc(Q.category)}</div>
+        <div class="kicker">Question ${head}</div>
         <div class="result-badge na" style="background:var(--ink)">${LETTERS[a.choice]}</div>
         <h1>Locked in</h1>
         <p class="muted">${esc(opts[a.choice])}</p>
       </div>
-      <div class="card stack">
-        <div class="row"><span class="muted">Stake</span><span class="spacer"></span><b>${fmt(stake)} pts</b></div>
-        <div class="row"><span class="muted">Lever</span><span class="spacer"></span><b class="${a.lev === 0.5 ? 'hedge' : ''}">${a.lev === 1 ? 'None' : levShort(a.lev)}${a.lev === 0.5 ? ' hedge' : ''}</b></div>
-        <div class="payoff"><div class="w">If right ${signed(payoff(stake, a.lev, true))}</div><div class="l">If wrong ${signed(payoff(stake, a.lev, false))}</div></div>
-      </div>
+      ${M.player.lockedSummary(ctx)}
       <p class="center muted" style="margin-top:20px">Eyes on the screen for the reveal…</p>
       <p class="center" id="timer" style="font-weight:700"></p>`;
     return;
   }
 
-  if (fresh) S.sel = { choice: null, lev: 1 };
+  if (fresh) { S.choice = null; S.submitting = false; M.player.resetSelection?.(); }
   app.innerHTML = `
     <div style="margin:6px 0 12px">
-      <div class="row"><span class="kicker">Q${q + 1} of ${m.n} · ${esc(Q.category)}</span><span class="spacer"></span><b id="timer"></b></div>
+      <div class="row"><span class="kicker">Q${head}</span><span class="spacer"></span><b id="timer"></b></div>
       <h2 style="margin-top:8px">${esc(Q.text)}</h2>
     </div>
-    <div class="card" style="padding:14px">
-      <div class="row"><span class="kicker">Your stake</span><span class="spacer"></span><b>${fmt(stake)} pts</b></div>
-      ${stake > 0 ? `
-        <div class="row" style="margin-top:10px"><span class="kicker">Play a lever?</span><span class="spacer"></span><span class="muted" style="font-size:12px">Each one works once per game</span></div>
-        <div class="lev-grid" style="margin-top:8px;grid-template-columns:repeat(3,1fr)">${PICKABLE.map((l) => `
-          <button class="lev ${l.k === 0.5 ? 'h' : ''}" data-k="${l.k}" data-key="${l.key}"><b>${l.short}</b><small>${l.name}</small></button>`).join('')}
-        </div>
-        <div class="payoff" id="payoff"></div>`
-      : `<p class="muted" style="margin:6px 0 0;font-size:14px">No points on this category — answer for accuracy bragging rights.</p>`}
-    </div>
-    <div class="opts" style="margin-top:14px">${opts.map((o, i) => `
+    ${M.player.panel?.(ctx) || ''}
+    <div class="opts">${opts.map((o, i) => `
       <button class="opt" data-c="${i}"><span class="L">${LETTERS[i]}</span><span>${esc(o)}</span></button>`).join('')}
-    </div>`;
-  setFoot(`<button class="btn block big" id="submit" disabled>Pick an answer</button>`);
+    </div>
+    <p class="err center" id="qerr" style="margin-top:10px"></p>`;
 
-  // Tap a lever to play it, tap again to go back to no lever.
-  $$('.lev').forEach((b) => (b.onclick = () => { S.sel.lev = S.sel.lev === +b.dataset.k ? 1 : +b.dataset.k; updateLevButtons(); }));
-  $$('.opt').forEach((b) => (b.onclick = () => {
-    S.sel.choice = +b.dataset.c;
-    $$('.opt').forEach((x) => x.classList.toggle('sel', +x.dataset.c === S.sel.choice));
-    updateLevButtons();
-  }));
-  $('#submit').onclick = async () => {
-    if (S.sel.choice == null) return;
-    $('#submit').disabled = true;
-    try {
-      await db.set(`games/${S.pin}/answers/${q}/${S.uid}`, { choice: S.sel.choice, lev: stake > 0 ? S.sel.lev : 1, at: db.now() });
-    } catch (e) {
-      $('#submit').textContent = "Time's up — answer not accepted";
-    }
-  };
-  updateLevButtons();
+  if (M.instantSubmit) {
+    // Quickfire: the first tap is the answer.
+    setFoot('');
+    $$('.opt').forEach((b) => (b.onclick = () => { S.choice = +b.dataset.c; submit(); }));
+  } else {
+    setFoot(`<button class="btn block big" id="submit" disabled>Pick an answer</button>`);
+    $$('.opt').forEach((b) => (b.onclick = () => { S.choice = +b.dataset.c; refreshQuestion(); }));
+    $('#submit').onclick = submit;
+    M.player.bindPanel?.(ctx, refreshQuestion);
+  }
+  refreshQuestion();
 }
 
-function updateLevButtons() {
-  if (!$('#submit') || S.meta?.state !== 'question' || S.myAnswer) return;
-  const stake = myStake(S.meta.qIndex);
-  const rem = remainingLevers(S.meta.settings, S.scores?.[S.uid]?.used);
-  if (rem[LEVERS.find((l) => l.k === S.sel.lev).key] <= 0) S.sel.lev = 1;
-  $$('.lev').forEach((b) => {
-    const r = rem[b.dataset.key];
-    b.disabled = r <= 0;
-    b.classList.toggle('sel', +b.dataset.k === S.sel.lev);
-    const small = b.querySelector('small');
-    const l = LEVERS.find((x) => x.key === b.dataset.key);
-    small.textContent = r <= 0 ? 'Used' : l.name;
-  });
-  if ($('#payoff')) {
-    $('#payoff').innerHTML = `<div class="w">Right ${signed(payoff(stake, S.sel.lev, true))}</div><div class="l">Wrong ${signed(payoff(stake, S.sel.lev, false))}</div>`;
-  }
+function refreshQuestion() {
+  if (S.meta?.state !== 'question' || S.myAnswer) return;
+  const M = mode();
+  $$('.opt').forEach((x) => x.classList.toggle('sel', +x.dataset.c === S.choice));
+  M.player.refreshPanel?.(ctx);
   const btn = $('#submit');
-  btn.disabled = S.sel.choice == null;
-  btn.textContent = S.sel.choice == null ? 'Pick an answer' : `Lock in ${LETTERS[S.sel.choice]}${stake > 0 && S.sel.lev !== 1 ? ' · ' + levShort(S.sel.lev) : ''}`;
+  if (!btn) return;
+  btn.disabled = S.choice == null || S.submitting;
+  btn.textContent = S.choice == null ? 'Pick an answer' : `Lock in ${LETTERS[S.choice]}${M.player.submitSuffix?.(ctx) || ''}`;
+}
+
+async function submit() {
+  if (S.choice == null || S.submitting) return;
+  S.submitting = true;
+  $$('.opt').forEach((b) => (b.disabled = true));
+  refreshQuestion();
+  try {
+    await db.set(`games/${S.pin}/answers/${S.meta.qIndex}/${S.uid}`, {
+      choice: S.choice,
+      ...(mode().player.payload?.(ctx) || {}),
+      at: db.ts(),
+    });
+  } catch (e) {
+    $('#qerr').textContent = "Time's up — answer not accepted";
+  }
 }
 
 function vReveal() {
   setFoot('');
+  const M = mode();
   const m = S.meta, q = m.qIndex, Q = m.question || {}, R = m.reveal || {};
   const opts = toArr(Q.options);
   const a = S.myAnswer;
@@ -402,11 +274,11 @@ function vReveal() {
   const badge = !a ? ['na', '–', 'No answer'] : ok ? ['ok', '✓', 'Correct'] : ['no', '✕', 'Wrong'];
   app.innerHTML = `
     <div class="center" style="margin-top:14px">
-      <div class="kicker">Question ${q + 1} · ${esc(Q.category)}</div>
+      <div class="kicker">Question ${q + 1}${Q.category && M.usesCategories ? ' · ' + esc(Q.category) : ''}</div>
       <div class="result-badge ${badge[0]}">${badge[1]}</div>
       <h1>${badge[2]}</h1>
       <div class="big-num ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" style="margin:6px 0">${signed(d)}</div>
-      <p class="muted">${a ? `${fmt(myStake(q))} pts${(at(s?.levs, q) ?? a.lev) === 1 ? '' : ' at ' + levShort(at(s?.levs, q) ?? a.lev)}` : 'You missed this one'} · total <b style="color:var(--ink)">${fmt(s?.total ?? 0)}</b></p>
+      <p class="muted">${M.player.revealLine(ctx, s, q)} · total <b style="color:var(--ink)">${fmt(s?.total ?? 0)}</b></p>
     </div>
     <div class="opts" style="margin-top:18px">${opts.map((o, i) => `
       <div class="opt ${i === R.correct ? 'correct' : a && a.choice === i ? 'wrong' : ''}"><span class="L">${LETTERS[i]}</span><span>${esc(o)}</span></div>`).join('')}
@@ -440,7 +312,6 @@ function vFinal() {
   const { rows, me } = myRankInfo();
   const s = S.scores?.[S.uid] || {};
   const medal = { 1: '🥇', 2: '🥈', 3: '🥉' }[me?.rank] || '';
-  const alloc = allocFor(S.me.allocation, S.cats.length, S.meta.settings);
   app.innerHTML = `
     <div class="center" style="margin-top:16px">
       <div class="kicker">Final result</div>
@@ -449,18 +320,10 @@ function vFinal() {
       <p class="muted">of ${rows.length} players</p>
       <div class="row" style="justify-content:center;margin:14px 0">
         <span class="chip dark" style="font-size:16px">${fmt(s.total ?? 0)} pts</span>
-        <span class="chip" style="font-size:16px">${s.correct ?? 0}/${S.cats.length} correct</span>
+        <span class="chip" style="font-size:16px">${s.correct ?? 0}/${S.meta.n} correct</span>
       </div>
     </div>
-    <div class="card" style="padding:12px 14px">
-      <table class="breakdown"><thead><tr><th>#</th><th>Category</th><th>Stake</th><th>Lever</th><th style="text-align:right">P&amp;L</th></tr></thead>
-      <tbody>${S.cats.map((c, i) => {
-        const d = at(s.deltas, i) ?? 0;
-        const pick = at(s.picks, i);
-        return `<tr><td>${i + 1}</td><td>${esc(c)} ${pick == null || pick < 0 ? '<span class="muted">·</span>' : ''}</td><td>${alloc[i]}</td><td>${(at(s.levs, i) ?? 1) === 1 ? '<span class="muted">—</span>' : levShort(at(s.levs, i))}</td>
-          <td class="n ${d > 0 ? 'up' : d < 0 ? 'down' : ''}">${signed(d)}</td></tr>`;
-      }).join('')}</tbody></table>
-    </div>
+    <div class="card" style="padding:12px 14px">${mode().player.finalTable(ctx, s)}</div>
     <p class="center muted" style="margin-top:20px">Thanks for playing — see you next Monday.</p>`;
 }
 
@@ -470,5 +333,5 @@ setInterval(() => {
   if (!el || S.meta?.state !== 'question' || !S.meta.deadline) { if (el) el.textContent = ''; return; }
   const left = Math.max(0, Math.ceil((S.meta.deadline - db.now()) / 1000));
   el.textContent = left + 's';
-  el.className = left <= 5 ? 'down' : '';
+  el.classList.toggle('down', left <= 5);
 }, 250);

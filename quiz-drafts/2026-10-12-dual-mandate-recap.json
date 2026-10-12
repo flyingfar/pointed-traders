@@ -1,0 +1,68 @@
+{
+  "mode": "quickfire",
+  "title": "The Fed's dual mandate — recap",
+  "weekOf": "2026-10-12",
+  "settings": { "timer": 20, "maxPoints": 1000 },
+  "questions": [
+    {
+      "text": "The Fed's dual mandate is…",
+      "options": ["Strong dollar + low unemployment", "Maximum employment + stable prices", "GDP growth + balanced budget", "Low rates + high stock prices"],
+      "correct": 1,
+      "explanation": "Congress gave the Fed two goals: maximum employment and stable prices (plus moderate long-term rates, which follow from the first two)."
+    },
+    {
+      "text": "The Fed's 2% inflation target is measured with which index?",
+      "options": ["CPI", "PPI", "PCE price index", "GDP deflator"],
+      "correct": 2,
+      "explanation": "The Fed targets 2% on the PCE price index, and watches core PCE (ex food and energy) for the underlying trend."
+    },
+    {
+      "text": "The idea that lower unemployment tends to come with higher inflation is the…",
+      "options": ["Phillips curve", "Laffer curve", "Yield curve", "Taylor rule"],
+      "correct": 0,
+      "explanation": "The Phillips curve: a tight labour market pushes up wages and prices — the reason the two mandates are linked."
+    },
+    {
+      "text": "Payrolls +350k vs +150k expected. Inflation in line. The Fed most likely leans…",
+      "options": ["More dovish", "Toward an emergency cut", "More hawkish", "Toward ending QT"],
+      "correct": 2,
+      "explanation": "A hot labour market means less need to support jobs and more risk of wage-driven inflation — a hawkish signal."
+    },
+    {
+      "text": "Core PCE beats expectations for a 3rd straight month; jobs steady. Markets will price…",
+      "options": ["Fewer rate cuts", "More rate cuts", "No change at all", "An emergency cut"],
+      "correct": 0,
+      "explanation": "Sticky inflation with a healthy job market points the Fed toward holding or hiking, so cut expectations get priced out."
+    },
+    {
+      "text": "Unemployment jumps AND inflation falls below 2%. Both mandates point to…",
+      "options": ["Hiking rates", "Cutting rates", "Holding rates", "Selling Treasuries"],
+      "correct": 1,
+      "explanation": "Weak jobs and below-target inflation both call for easier policy — the easy case where the mandates agree."
+    },
+    {
+      "text": "Jobs data weaker than expected, inflation stronger than expected. For the Fed this means…",
+      "options": ["Both mandates say cut", "Both mandates say hike", "Neither matters for policy", "The two mandates conflict"],
+      "correct": 3,
+      "explanation": "Weak jobs argue for cuts, hot inflation for hikes — a stagflation-style trade-off with no painless option."
+    },
+    {
+      "text": "In that conflict, if inflation expectations start rising, the Fed usually prioritises…",
+      "options": ["Price stability", "Maximum employment"],
+      "correct": 0,
+      "explanation": "Unanchored expectations can make inflation self-fulfilling, so the Fed tends to protect price stability first (the Volcker lesson)."
+    },
+    {
+      "text": "Payrolls badly miss; inflation in line. The 2-year Treasury yield most likely…",
+      "options": ["Rises", "Falls"],
+      "correct": 1,
+      "explanation": "The 2-year tracks expected Fed policy: weaker jobs → more expected cuts → lower 2-year yield."
+    },
+    {
+      "text": "Unemployment rises because many more people started looking for work. Versus a rise from layoffs, this is…",
+      "options": ["More worrying", "Less worrying"],
+      "correct": 1,
+      "explanation": "Rising participation means more labour supply, not falling demand — like Sept 2026, when the jobless rate rose to 4.2% as the labour force grew 485k."
+    }
+  ]
+}

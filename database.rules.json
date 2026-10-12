@@ -38,10 +38,10 @@
           "$q": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid && !data.exists() && root.child('games').child($pin).child('meta/state').val() === 'question' && root.child('games').child($pin).child('meta/qKey').val() === $q",
-              ".validate": "newData.hasChildren(['choice', 'lev'])",
+              ".validate": "newData.hasChildren(['choice', 'at'])",
               "choice": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
               "lev": { ".validate": "newData.isNumber() && (newData.val() === 0.5 || newData.val() === 1 || newData.val() === 2 || newData.val() === 3)" },
-              "at": { ".validate": "newData.isNumber()" },
+              "at": { ".validate": "newData.isNumber() && newData.val() === now" },
               "$other": { ".validate": false }
             }
           }

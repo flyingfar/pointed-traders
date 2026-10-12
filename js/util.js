@@ -43,7 +43,7 @@ export function demoBanner(db) {
   const b = document.createElement('div');
   b.className = 'demo-banner';
   b.innerHTML =
-    '<b>Demo mode</b> — no Firebase configured. Everything syncs between tabs of <u>this browser only</u>. Add your Firebase config in <code>js/config.js</code> to play with phones.';
+    '<b>Demo mode</b> — local test data only. Everything syncs between tabs of <u>this browser only</u>; nothing touches the live game.';
   document.body.prepend(b);
 }
 
@@ -54,3 +54,5 @@ export function toast(msg, ms = 1800) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), ms);
 }
+
+export const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

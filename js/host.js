@@ -1,7 +1,10 @@
+// Projector (host) app — mode-independent flow; mode-specific screens come from js/modes/*.js.
+
 import { db } from './db.js';
 import { CONFIG } from './config.js';
 import { $, $$, esc, fmt, signed, at, toArr, LETTERS, brandHTML, demoBanner, fmtWeek, clean } from './util.js';
-import { computeScores, rankList, levShort, withDefaults } from './game.js';
+import { rankList } from './game.js';
+import { getMode } from './modes/index.js';
 
 const stage = $('#stage');
 const top = $('#top');
@@ -10,6 +13,9 @@ const foot = $('#foot');
 const pin = new URLSearchParams(location.search).get('pin');
 const G = `games/${pin}`;
 const S = { meta: null, cats: [], players: {}, scores: {}, answers: {}, quiz: null, key: null, ansSub: null, ansQ: null, busy: false, primary: null };
+const mode = () => getMode(S.meta?.mode);
+// Handed to mode modules so they can draw their own screens (e.g. Pointed's allocation step).
+const ctx = { S, db, stage, setFoot, startQuestion: (i) => startQuestion(i), kick: (uid, name) => kick(uid, name) };
 
 init();
 
@@ -87,7 +93,7 @@ async function act(fn) {
 
 const startAllocation = () => act(() => db.update({ [`${G}/meta/state`]: 'allocate' }));
 
-const startQuestion = (i) => act(async () => {
+function startQuestion(i) { return act(async () => {
   const q = S.quiz.questions[i];
   const timer = Number(S.meta.settings?.timer) || 0;
   await db.update({
@@ -97,16 +103,17 @@ const startQuestion = (i) => act(async () => {
     [`${G}/meta/question`]: clean({ category: q.category, text: q.text, options: q.options }),
     [`${G}/meta/reveal`]: null,
     [`${G}/meta/deadline`]: timer > 0 ? db.now() + timer * 1000 + 600 : null,
+    [`${G}/meta/started/${i}`]: db.ts(), // server clock — Quickfire measures answer speed from here
   });
-});
+}); }
 
 const reveal = () => act(async () => {
   if (S.meta.state !== 'question') return;
   const i = S.meta.qIndex;
   // Close answering first so late writes are rejected by the rules, then score.
   await db.update({ [`${G}/meta/state`]: 'scoring' });
-  const [players, answers] = await Promise.all([db.get(`${G}/players`), db.get(`${G}/answers`)]);
-  const scores = computeScores({ settings: S.meta.settings, questions: S.quiz.questions, players: players || {}, answers: answers || {}, upTo: i });
+  const [players, answers, meta] = await Promise.all([db.get(`${G}/players`), db.get(`${G}/answers`), db.get(`${G}/meta`)]);
+  const scores = mode().score({ settings: meta.settings, questions: S.quiz.questions, players: players || {}, answers: answers || {}, upTo: i, meta });
   const q = S.quiz.questions[i];
   const ansQ = at(answers, i) || {};
   const counts = q.options.map((_, c) => Object.values(ansQ).filter((a) => a.choice === c).length);
@@ -119,7 +126,7 @@ const reveal = () => act(async () => {
 
 const showBoard = () => act(() => db.update({ [`${G}/meta/state`]: 'board' }));
 const showFinal = () => act(() => db.update({ [`${G}/meta/state`]: 'final' }));
-const kick = (uid, name) => { if (confirm(`Remove ${name}?`)) db.remove(`${G}/players/${uid}`); };
+function kick(uid, name) { if (confirm(`Remove ${name}?`)) db.remove(`${G}/players/${uid}`); }
 
 function maybeAutoReveal() {
   if (S.meta?.state !== 'question') return;
@@ -151,8 +158,9 @@ function render() {
   if (!S.meta) return;
   renderTop();
   const m = S.meta;
-  const views = { lobby: vLobby, allocate: vAllocate, question: vQuestion, scoring: vQuestion, reveal: vReveal, board: vBoard, final: vFinal };
-  (views[m.state] || vLobby)();
+  const M = mode();
+  const views = { lobby: vLobby, allocate: () => M.host.allocate(ctx), question: vQuestion, scoring: vQuestion, reveal: vReveal, board: vBoard, final: vFinal };
+  (views[m.state === 'allocate' && !M.hasAllocate ? 'lobby' : m.state] || vLobby)();
 }
 
 function joinUrl() {
@@ -166,12 +174,12 @@ function vLobby() {
   const url = joinUrl();
   if (S.key !== 'lobby' + S.cats.length) {
     S.key = 'lobby' + S.cats.length;
-    const st = withDefaults(S.meta.settings);
+    const M = mode();
     stage.innerHTML = `
       <div class="lobby">
         <div class="join">
-          <div class="kicker" style="font-size:16px">${esc(CONFIG.clubName)} · Monday warm-up</div>
-          <h1>${esc(CONFIG.tagline)}.</h1>
+          <div class="kicker" style="font-size:16px">${esc(CONFIG.clubName)} · ${esc(M.lobbyKicker)} · <span class="chip ${M.chip}">${esc(M.name)}</span></div>
+          <h1>${esc(M.tagline)}.</h1>
           <div class="tag">${esc(S.meta.title || '')}</div>
           <div class="join-box">
             <div id="qr"></div>
@@ -181,11 +189,7 @@ function vLobby() {
               <div class="bigpin">${esc(pin)}</div>
             </div>
           </div>
-          <div class="rules">
-            <div class="card"><b>1 · Allocate</b><span>Split ${st.budget} pts across ${S.cats.length} categories, ${st.minPer}–${st.maxPer} each — blind.</span></div>
-            <div class="card"><b>2 · Lever up</b><span>0.5× hedge, 2× or 3× — each lever once per game.</span></div>
-            <div class="card"><b>3 · Be right</b><span>Right wins your stake, wrong loses it. No speed bonus.</span></div>
-          </div>
+          <div class="rules">${M.rules(S.meta.settings, S.cats.length).map(([t, d]) => `<div class="card"><b>${esc(t)}</b><span>${esc(d)}</span></div>`).join('')}</div>
         </div>
         <div class="players-panel">
           <div class="count" id="pcount"></div>
@@ -200,29 +204,11 @@ function vLobby() {
     .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))
     .map(([uid, p]) => `<span class="chip" data-uid="${esc(uid)}">${esc(p.name)}</span>`).join('');
   $$('#chips .chip').forEach((c) => (c.onclick = () => kick(c.dataset.uid, c.textContent)));
-  setFoot({ primary: players.length ? startAllocation : null, label: 'Start — allocate points', hint: players.length ? 'Space ▸ next' : 'Waiting for players…' });
-}
-
-function vAllocate() {
-  const players = Object.entries(S.players);
-  const locked = players.filter(([, p]) => p.locked);
-  S.key = 'allocate';
-  stage.innerHTML = `
-    <div class="row"><div><div class="kicker" style="font-size:16px">Step 1 · Allocate your ${withDefaults(S.meta.settings).budget} points · ${withDefaults(S.meta.settings).minPer}–${withDefaults(S.meta.settings).maxPer} per category</div>
-      <h1 class="h-title">This week's categories</h1></div><span class="spacer"></span>
-      <div class="center"><div style="font-size:64px;font-weight:800;line-height:1">${locked.length}<span class="muted" style="font-size:36px">/${players.length}</span></div><div class="muted">locked in</div></div>
-    </div>
-    <div class="cat-grid">${S.cats.map((c, i) => `<div class="card"><div class="n">${i + 1}</div><div class="c">${esc(c)}</div></div>`).join('')}</div>
-    <div class="player-chips" style="margin-top:3vh">${players.map(([uid, p]) => `<span class="chip ${p.locked ? 'locked' : ''}" data-uid="${esc(uid)}">${esc(p.name)}${p.locked ? ' ✓' : ''}</span>`).join('')}</div>`;
-  $$('.player-chips .chip').forEach((c) => (c.onclick = () => kick(c.dataset.uid, c.textContent.replace(' ✓', ''))));
+  const M = mode();
   setFoot({
-    primary: () => {
-      const left = players.length - locked.length;
-      if (left && !confirm(`${left} player(s) haven't locked in — they'll play with the default even split. Start anyway?`)) return;
-      startQuestion(0);
-    },
-    label: 'Start question 1',
-    hint: 'Players who never lock in play with an even split',
+    primary: players.length ? (M.hasAllocate ? startAllocation : () => startQuestion(0)) : null,
+    label: M.hasAllocate ? 'Start — allocate points' : 'Start question 1',
+    hint: players.length ? 'Space ▸ next' : 'Waiting for players…',
   });
 }
 
@@ -234,7 +220,7 @@ function vQuestion() {
   if (S.key !== key) {
     S.key = key;
     stage.innerHTML = `
-      <div class="q-head"><span class="chip dark">Question ${i + 1} / ${m.n}</span><span class="chip">${esc(Q.category)}</span></div>
+      <div class="q-head"><span class="chip dark">Question ${i + 1} / ${m.n}</span>${Q.category && mode().usesCategories ? `<span class="chip">${esc(Q.category)}</span>` : ''}</div>
       <div class="q-body">
         <div>
           <div class="q-text">${esc(Q.text)}</div>
@@ -251,30 +237,20 @@ function vQuestion() {
   }
   $('#acount').textContent = `${answered}/${n}`;
   const scoring = m.state === 'scoring';
-  setFoot({ primary: scoring ? null : reveal, label: 'Reveal answer', hint: scoring ? 'Scoring…' : 'Lever up or hedge — then lock in your answer' });
+  setFoot({ primary: scoring ? null : reveal, label: 'Reveal answer', hint: scoring ? 'Scoring…' : mode().host.questionHint });
 }
 
 function vReveal() {
   const m = S.meta, i = m.qIndex, Q = S.quiz.questions[i], R = m.reveal || {};
   const counts = toArr(R.counts);
   const totalAns = counts.reduce((a, b) => a + b, 0) || 1;
-  // Callouts from this question's P&L
-  const rows = Object.entries(S.players).map(([uid, p]) => {
-    const s = S.scores[uid] || {};
-    return { name: p.name, d: at(s.deltas, i) ?? 0, lev: at(s.levs, i) ?? 1, pick: at(s.picks, i) };
-  });
-  const best = rows.filter((r) => r.d > 0).sort((a, b) => b.d - a.d)[0];
-  const worst = rows.filter((r) => r.d < 0).sort((a, b) => a.d - b.d)[0];
-  const answeredRows = rows.filter((r) => r.pick != null && r.pick >= 0);
   const nAns = counts.reduce((a, b) => a + b, 0);
   const pctRight = nAns ? Math.round(((counts[R.correct] || 0) / nAns) * 100) : 0;
-  const hedgers = answeredRows.filter((r) => r.lev === 0.5).length;
-  const levered = answeredRows.filter((r) => r.lev >= 2).length;
 
   if (S.key !== 'r' + i) {
     S.key = 'r' + i;
     stage.innerHTML = `
-      <div class="q-head"><span class="chip dark">Question ${i + 1} / ${m.n}</span><span class="chip">${esc(Q.category)}</span><span class="chip green">${pctRight}% got it right</span></div>
+      <div class="q-head"><span class="chip dark">Question ${i + 1} / ${m.n}</span>${Q.category && mode().usesCategories ? `<span class="chip">${esc(Q.category)}</span>` : ''}<span class="chip green">${pctRight}% got it right</span></div>
       <div class="q-text" style="font-size:clamp(24px,2.6vw,44px);margin:2.5vh 0">${esc(Q.text)}</div>
       <div class="h-opts">${Q.options.map((o, c) => `
         <div class="h-opt ${c === R.correct ? 'correct' : 'dim'}"><div class="bar" data-w="${(counts[c] || 0) / totalAns * 100}" style="width:0"></div>
@@ -283,10 +259,7 @@ function vReveal() {
       <div class="callouts" id="callouts"></div>`;
     requestAnimationFrame(() => $$('.h-opt .bar').forEach((b) => (b.style.width = b.dataset.w + '%')));
   }
-  $('#callouts').innerHTML = `
-    <div class="card"><div class="kicker k">Best trade</div><div class="v up">${best ? `${esc(best.name)} ${signed(best.d)} ${best.lev !== 1 ? `<span class="muted" style="font-size:.6em">@ ${levShort(best.lev)}</span>` : ''}` : '—'}</div></div>
-    <div class="card"><div class="kicker k">Biggest blow-up</div><div class="v down">${worst ? `${esc(worst.name)} ${signed(worst.d)} ${worst.lev !== 1 ? `<span class="muted" style="font-size:.6em">@ ${levShort(worst.lev)}</span>` : ''}` : 'Nobody — well risk-managed'}</div></div>
-    <div class="card"><div class="kicker k">Desk positioning</div><div class="v">${levered} levered · <span class="hedge">${hedgers} hedged</span></div></div>`;
+  $('#callouts').innerHTML = mode().host.revealCallouts(ctx, i);
   setFoot({ primary: showBoard, label: 'Standings' });
 }
 
@@ -321,10 +294,6 @@ function vFinal() {
         <div class="sc" style="animation-delay:${delay + 1}s">${fmt(r.total)} pts · ${r.correct}/${S.meta.n}</div>
         <div class="block" style="--h:${h};animation-delay:${delay}s">${label}</div>
       </div>` : `<div class="p"></div>`;
-    // Fun stats
-    let bigTrade = null;
-    for (const r of rows) r.deltas.forEach((d, q) => { if (!bigTrade || d > bigTrade.d) bigTrade = { name: r.name, d, q, lev: r.levs[q] }; });
-    const sharp = [...rows].sort((x, y) => y.correct - x.correct)[0];
     stage.innerHTML = `
       <div class="center"><div class="kicker" style="font-size:16px">${esc(S.meta.title || '')}</div><h1 class="h-title">Final leaderboard</h1></div>
       <div class="podium">
@@ -332,10 +301,7 @@ function vFinal() {
         ${slot(a, 'first', '36vh', '1', 1.6)}
         ${slot(c, 'third', '18vh', '3', 0)}
       </div>
-      <div class="rest">
-        ${bigTrade && bigTrade.d > 0 ? `<span class="chip green">Trade of the day: ${esc(bigTrade.name)} ${signed(bigTrade.d)} on Q${bigTrade.q + 1}${bigTrade.lev !== 1 ? ' @ ' + levShort(bigTrade.lev) : ''}</span>` : ''}
-        ${sharp ? `<span class="chip purple">Sharpest: ${esc(sharp.name)} · ${sharp.correct}/${S.meta.n} correct</span>` : ''}
-      </div>
+      <div class="rest">${mode().host.finalChips(ctx, rows)}</div>
       <div class="rest">${rows.slice(3, 20).map((r) => `<span class="chip">${r.rank}. ${esc(r.name)} · ${fmt(r.total)}</span>`).join('')}</div>`;
   }
   setFoot({
@@ -348,7 +314,7 @@ function vFinal() {
 function downloadCsv() {
   const rows = rankList(S.players, S.scores);
   const n = S.meta.n;
-  const head = ['rank', 'name', 'total', 'correct', ...Array.from({ length: n }, (_, i) => `q${i + 1}_pnl`)];
+  const head = ['rank', 'name', 'total', 'correct', ...Array.from({ length: n }, (_, i) => `q${i + 1}_points`)];
   const lines = [head.join(',')].concat(rows.map((r) =>
     [r.rank, `"${String(r.name).replace(/"/g, '""')}"`, r.total, r.correct, ...Array.from({ length: n }, (_, i) => r.deltas[i] ?? 0)].join(',')));
   const a = document.createElement('a');
